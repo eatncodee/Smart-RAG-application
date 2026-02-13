@@ -1,0 +1,26 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment variables (CRITICAL: Do not leak your Gemini Key)
+.env
+
+# Virtual Environment
+venv/
+env/
+.venv/
+
+# ChromaDB Data (Local persistence folder)
+# Usually named 'chroma_data' or whatever you named your persist_directory
+chroma_db/
+chroma_data/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Large files / PDF uploads
+*.pdf
+*.docx
+data/
