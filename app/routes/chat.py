@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from app.services.rag import ask_question
+from typing import Optional
+from app.services.rag import ask_question,chat_with_function_calling
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -9,14 +10,28 @@ class Question(BaseModel):
     n_results: int = 3  
     
 class ChatResponse(BaseModel):
-    question: str
     answer: str
+    used_rag: bool
+    conversation_history: list
 
+class ChatMessage(BaseModel):
+    message: str
+    conversation_history: Optional[list] = None
 
-@router.post("/ask", response_model=ChatResponse)
+@router.post("/ask")
 async def ask(q: Question):
     try:
         result = ask_question(q.question, q.n_results)
+        return result
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+@router.post("/chat", response_model=ChatResponse)
+async def chat(msg: ChatMessage):
+    try:
+        result = chat_with_function_calling(msg.message,msg.conversation_history)
         return result
     
     except Exception as e:
