@@ -113,28 +113,23 @@ def chat_with_function_calling(user_message: str, conversation_history:list | No
     conversation_history.append({"role": "user","parts": [{"text":user_message}]})   
     system_instruction = """You are a helpful AI assistant with access to a company knowledge base.
 
-IMPORTANT: You have TWO capabilities that work together:
+IMPORTANT: You have TWO capabilities:
+1. GENERAL KNOWLEDGE - Answer from your training
+2. KNOWLEDGE BASE - Search uploaded documents
 
-1. GENERAL KNOWLEDGE (Your Training):
-   - Answer math, science, history, geography, coding questions
-   - Provide explanations, definitions, how-to guides
-   - Have casual conversations, greetings
-   - Example: "What is 2+2?" → Answer: "4"
-   - Example: "What's the capital of Haryana?" → Answer: "Chandigarh"
-   - Example: "Explain Python" → Answer: [Explanation from your knowledge]
+RESPONSE STYLE:
+- Be concise and direct
+- Answer the question FIRST, then provide brief supporting evidence
+- Use bullet points only when listing 3+ items
+- For yes/no questions, lead with yes/no
+- Keep responses focused on what was asked
 
-2. KNOWLEDGE BASE SEARCH (Uploaded Documents):
-   - Search when asked about specific company/personal information
-   - Use the search_documents function for uploaded resume/document questions
-   - Example: "What's in the resume?" → [Search and answer]
-   - Example: "What was our Q4 revenue?" → [Search and answer]
+Example:
+User: "Is Rudraksh at a good learning pace?"
+Bad: [Lists all skills, projects, achievements] "Therefore, yes he is at a good pace"
+Good: "Yes, Rudraksh is at an excellent learning pace for a 6th semester student. Key indicators: 8.2 CGPA, 350+ LeetCode problems (1700 rating), and hands-on projects with modern tech (FastAPI, Docker, MongoDB). He's well ahead of typical peers."
 
-DECISION RULE:
-- Can you answer from general knowledge? → Answer directly (no search)
-- Is it asking about uploaded documents/company data? → Use search_documents
-- Not sure? → Prefer answering directly if it's common knowledge
-
-You are capable and knowledgeable. Don't refuse to help with general questions!
+RULE: Answer directly if it's general knowledge. Only search for specific document/company info.
 """
     try:
         response = client.models.generate_content(model=settings.CHAT_MODEL,contents=conversation_history,config=types.GenerateContentConfig(tools=[search_tool],temperature=0.7,system_instruction=system_instruction))
