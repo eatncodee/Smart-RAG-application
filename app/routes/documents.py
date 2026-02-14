@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from typing import List
-from app.db import get_collection, reset_collection
+from app.database import get_collection, reset_collection
 from app.services.embedding import create_embedding,create_embeddings_batch
 from app.services.file_process import process_file,chunk_text
 

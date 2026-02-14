@@ -1,7 +1,7 @@
 from google import genai
 from google.genai import types
 from app.config import settings
-from app.db import get_collection
+from app.database import get_collection
 from app.services.embedding import create_embedding,create_embeddings_batch
 
 
