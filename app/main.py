@@ -5,7 +5,7 @@ from app.routes import documents, chat,websocket
 app = FastAPI(
     title="RAG API",
     description="Retrieval-Augmented Generation API using Gemini and ChromaDB",
-    version="1.0.0"
+    version="3.1.1"
 )
 
 app.add_middleware(
