@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import documents, chat
+from app.routes import documents, chat,wbesocket
 
 app = FastAPI(
     title="RAG API",
@@ -18,6 +18,8 @@ app.add_middleware(
 
 app.include_router(documents.router)
 app.include_router(chat.router)
+app.include_router(wbesocket.router)
+
 
 @app.get("/")
 async def root():
@@ -26,7 +28,8 @@ async def root():
         "endpoints": {
             "upload": "POST /documents/upload",
             "ask": "POST /chat/ask",
-            "list": "GET /documents/list"
+            "list": "GET /documents/list",
+            "websocket_echo": "WS /ws/echo"
         }
     }
 
