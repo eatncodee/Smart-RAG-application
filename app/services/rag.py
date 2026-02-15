@@ -107,7 +107,7 @@ def search_documents(question: str)-> str:
             return "\n\n".join(docs)
     return "No relevant docs found"
 
-def chat_with_function_calling(user_message: str, conversation_history:list | None = None) -> dict:
+def chat_with_function_calling(user_message: str, conversation_history:list | None = None,temprature: float=0.7) -> dict:
     if conversation_history is None:
         conversation_history = []
     conversation_history.append({"role": "user","parts": [{"text":user_message}]})   
@@ -132,7 +132,7 @@ Good: "Yes, Rudraksh is at an excellent learning pace for a 6th semester student
 RULE: Answer directly if it's general knowledge. Only search for specific document/company info.
 """
     try:
-        response = client.models.generate_content(model=settings.CHAT_MODEL,contents=conversation_history,config=types.GenerateContentConfig(tools=[search_tool],temperature=0.7,system_instruction=system_instruction))
+        response = client.models.generate_content(model=settings.CHAT_MODEL,contents=conversation_history,config=types.GenerateContentConfig(tools=[search_tool],temperature=temprature,system_instruction=system_instruction))
 
         function_calls = []
 
@@ -150,7 +150,7 @@ RULE: Answer directly if it's general knowledge. Only search for specific docume
                     conversation_history.append({"role": "model","parts": [{"function_call": fc}]})
                     conversation_history.append({"role": "user","parts": [{"function_response": {"name": "search_documents","response": {"result": search_results}}}]}) 
 
-            final_response = client.models.generate_content(model=settings.CHAT_MODEL,contents=conversation_history,config=types.GenerateContentConfig(temperature=0.7,system_instruction=system_instruction))
+            final_response = client.models.generate_content(model=settings.CHAT_MODEL,contents=conversation_history,config=types.GenerateContentConfig(temperature=temprature,system_instruction=system_instruction))
             
             answer = final_response.text
             used_rag = True
@@ -164,7 +164,8 @@ RULE: Answer directly if it's general knowledge. Only search for specific docume
         return {
             "answer": answer,
             "used_rag": used_rag,
-            "conversation_history": conversation_history
+            "conversation_history": conversation_history,
+            "temprature":temprature
         }
     except Exception as e:
         error_message = f"I encountered an error: {str(e)}"
@@ -182,10 +183,9 @@ RULE: Answer directly if it's general knowledge. Only search for specific docume
         }
 
 def generate_answer(question :str ,context_docs: str):
-    context="\n".join(context_docs)
     prompt = f"""You are a helpful assistant answering questions.
             Context (retrieved information):
-            {context}
+            {context_docs}
 
             Question: {question}
 

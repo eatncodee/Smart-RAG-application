@@ -76,10 +76,16 @@ async def upload_file(file: UploadFile = File(...)):
             chunks = chunk_text(text, chunk_size=1000, overlap=200)
             
             embeddings=create_embeddings_batch(chunks)
-            
+            metadata = []
+            for i, chunk in enumerate(chunks):
+                metadata.append({
+                    "source": file.filename,
+                    "chunk_no": i,
+                })
             collection.add(
                 documents=chunks,
                 embeddings=embeddings,
+                metadatas=metadata,
                 ids=[f"{file.filename}_{i}" for i in range(len(chunks))]           
             ) 
             return {
@@ -132,3 +138,19 @@ async def count_documents():
     collection = get_collection()
     return {"count": collection.count()}
 
+
+@router.delete("/del/{target}")
+async def delete_doc(target: str, mode: str = "file"):
+    collection = get_collection()
+
+    try: 
+        if mode == "file":
+            collection.delete(where={"source": target})
+            msg = f"Deleted all chunks for file: {target}"
+        else:
+            collection.delete(ids=[target])
+            msg = f"Deleted specific chunk ID: {target}"
+            
+        return {"message": msg}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
