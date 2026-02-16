@@ -7,11 +7,11 @@ import io
 router=APIRouter()
 
 
-async def procces_with_rag(user_text:str):
-    response=chat_with_function_calling(user_message=user_text,conversation_history=None,temprature=0.9)
+async def procces_with_rag(user_text:str,conversation_history :list | None=None):
+    response=chat_with_function_calling(user_message=user_text,conversation_history=conversation_history,temprature=0.9)
 
     if response:
-        return response["answer"]
+        return response
     
 
 async def text_to_speech(text:str):
@@ -26,17 +26,11 @@ async def text_to_speech(text:str):
     return audio_bytes
 
 
-async def voice_pipeline(text_1):
-    answer_t=await procces_with_rag(text_1)
-    if answer_t:
-        audio_output=await text_to_speech(answer_t)
-    return audio_output
-
 @router.websocket("/ws/voice")
 async def voice_chat(websocket: WebSocket):
     await websocket.accept()
     print("✅ Voice client connected")
-    
+    conversation_history=[]
     try:
         while True:
             data = await websocket.receive_json()
@@ -44,11 +38,16 @@ async def voice_chat(websocket: WebSocket):
             print(f"📥 Received {len(user_text)}")
             if not user_text:
                 continue
-            
-            response_audio = await voice_pipeline(user_text)
-            if response_audio:
-                await websocket.send_bytes(response_audio)
-                print(f"📤 Sent {len(response_audio)} bytes")
+
+            result =await procces_with_rag(user_text,conversation_history)
+
+            if result :
+                conversation_history=result.get("conversation_history",[])
+                data=result.get("answer","")
+                audio_output=await text_to_speech(data)
+            if audio_output:
+                await websocket.send_bytes(audio_output)
+                print(f"📤 Sent {len(audio_output)} bytes")
         
     except WebSocketDisconnect:
         print("❌ Voice client disconnected")
