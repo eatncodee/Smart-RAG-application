@@ -16,6 +16,12 @@ env/
 chroma_db/
 chroma_data/
 
+# VS Code folder
+.vscode/*
+
+# Ignore local history (if using Local History extension)
+.history/
+
 # OS files
 .DS_Store
 Thumbs.db
