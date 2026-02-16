@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Chat</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            text-align: center;
+        }
+
+        h1 {
+            color: #667eea;
+            margin-bottom: 30px;
+        }
+
+        .status {
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        .status.disconnected {
+            background: #ffe0e0;
+            color: #cc0000;
+        }
+
+        .status.connected {
+            background: #e0ffe0;
+            color: #00aa00;
+        }
+
+        .status.listening {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status.processing {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+
+        #recordButton {
+            width: 150px;
+            height: 150px;
+            border-radius: 50%;
+            border: none;
+            font-size: 60px;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin: 20px 0;
+        }
+
+        #recordButton:not(.listening) {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        #recordButton.listening {
+            background: #ff4444;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
+        #recordButton:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .transcript {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            min-height: 60px;
+            font-style: italic;
+            color: #666;
+        }
+
+        .transcript.active {
+            color: #333;
+            font-style: normal;
+        }
+
+        .error {
+            color: #cc0000;
+            margin: 10px 0;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 Voice Chat</h1>
+        
+        <div id="status" class="status disconnected">
+            Disconnected
+        </div>
+
+        <button id="recordButton" disabled>
+            🎤
+        </button>
+
+        <div class="transcript" id="transcript">
+            Click the microphone to speak...
+        </div>
+
+        <div id="error" class="error"></div>
+    </div>
+
+    <script>
+        // WebSocket connection
+        let ws = null;
+        
+        // Speech recognition
+        let recognition = null;
+        
+        // DOM elements
+        const recordButton = document.getElementById('recordButton');
+        const statusDiv = document.getElementById('status');
+        const transcriptDiv = document.getElementById('transcript');
+        const errorDiv = document.getElementById('error');
+
+        // Check if browser supports speech recognition
+        function checkSpeechRecognition() {
+            if (!('webkitSpeechRecognition' in window)) {
+                errorDiv.textContent = '❌ Speech recognition not supported. Please use Chrome or Edge.';
+                return false;
+            }
+            return true;
+        }
+
+        // Connect to WebSocket
+        function connect() {
+            ws = new WebSocket('ws://localhost:8000/ws/voice');
+
+            ws.onopen = () => {
+                console.log('✅ Connected');
+                updateStatus('connected', '✅ Connected - Click mic to speak');
+                recordButton.disabled = false;
+            };
+
+            ws.onmessage = async (event) => {
+                console.log('📥 Received audio');
+                updateStatus('processing', '🔊 Playing response...');
+                
+                // Play audio response
+                const audioBlob = event.data;
+                const audioUrl = URL.createObjectURL(audioBlob);
+                const audio = new Audio(audioUrl);
+                
+                audio.play();
+                
+                audio.onended = () => {
+                    updateStatus('connected', '✅ Ready - Click mic to speak again');
+                };
+            };
+
+            ws.onclose = () => {
+                console.log('❌ Disconnected');
+                updateStatus('disconnected', '❌ Disconnected');
+                recordButton.disabled = true;
+                setTimeout(connect, 3000);
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                errorDiv.textContent = '⚠️ Connection error';
+            };
+        }
+
+        // Initialize speech recognition
+        function initSpeechRecognition() {
+            recognition = new webkitSpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = 'en-US';
+
+            recognition.onstart = () => {
+                console.log('🎤 Listening...');
+                updateStatus('listening', '🎤 Listening... Speak now!');
+                recordButton.classList.add('listening');
+                transcriptDiv.textContent = 'Listening...';
+                transcriptDiv.classList.add('active');
+            };
+
+            recognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript;
+                console.log('📝 Transcript:', transcript);
+                
+                transcriptDiv.textContent = `You: "${transcript}"`;
+                
+                // Send to backend
+                sendText(transcript);
+            };
+
+            recognition.onerror = (event) => {
+                console.error('Speech recognition error:', event.error);
+                errorDiv.textContent = `Error: ${event.error}`;
+                updateStatus('connected', '✅ Ready');
+                recordButton.classList.remove('listening');
+            };
+
+            recognition.onend = () => {
+                console.log('🎤 Stopped listening');
+                recordButton.classList.remove('listening');
+            };
+        }
+
+        // Send text to backend
+        function sendText(text) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                errorDiv.textContent = 'Not connected to server';
+                return;
+            }
+
+            console.log('📤 Sending:', text);
+            updateStatus('processing', '🤖 Processing...');
+            
+            ws.send(JSON.stringify({
+                text: text
+            }));
+        }
+
+        // Update status display
+        function updateStatus(type, message) {
+            statusDiv.className = `status ${type}`;
+            statusDiv.textContent = message;
+        }
+
+        // Record button click
+        recordButton.addEventListener('click', () => {
+            if (!recognition) {
+                errorDiv.textContent = 'Speech recognition not initialized';
+                return;
+            }
+
+            errorDiv.textContent = '';
+            recognition.start();
+        });
+
+        // Initialize
+        if (checkSpeechRecognition()) {
+            initSpeechRecognition();
+            connect();
+        }
+    </script>
+</body>
+</html>
