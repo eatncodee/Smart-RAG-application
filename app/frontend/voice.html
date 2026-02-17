@@ -133,143 +133,169 @@
 
         <div id="error" class="error"></div>
     </div>
-
     <script>
-        // WebSocket connection
         let ws = null;
+let recognition = null;
+
+// Audio queue system
+let audioQueue = [];
+let isPlaying = false;
+
+const recordButton = document.getElementById('recordButton');
+const statusDiv = document.getElementById('status');
+const transcriptDiv = document.getElementById('transcript');
+const errorDiv = document.getElementById('error');
+
+// User ID
+function generateUserId() {
+    return 'user_' + Math.random().toString(36).substr(2, 9);
+}
+const userId = sessionStorage.getItem('userId') || generateUserId();
+sessionStorage.setItem('userId', userId);
+
+// Play next audio in queue
+function playNext() {
+    // Queue empty → stop playing
+    if (audioQueue.length === 0) {
+        isPlaying = false;
+        updateStatus('connected', '✅ Ready - Click mic to speak again');
+        return;
+    }
+
+    isPlaying = true;
+
+    // Get next chunk
+    const audioUrl = audioQueue.shift();
+    const audio = new Audio(audioUrl);
+
+    audio.play();
+
+    // When done → play next chunk
+    audio.onended = () => {
+        playNext();
+    };
+
+    // Handle errors
+    audio.onerror = () => {
+        console.error('Audio play error');
+        playNext();  // Skip broken chunk, play next
+    };
+}
+
+// WebSocket connection
+function connect() {
+    ws = new WebSocket(`ws://localhost:8000/ws/voice/${userId}`);
+
+    ws.onopen = () => {
+        console.log('✅ Connected');
+        updateStatus('connected', '✅ Connected - Click mic to speak');
+        recordButton.disabled = false;
+    };
+
+    ws.onmessage = async (event) => {
+        console.log('📥 Received audio chunk');
+
+        // Create URL from received audio
+        const audioBlob = event.data;
+        const audioUrl = URL.createObjectURL(audioBlob);
+
+        // Add to queue
+        audioQueue.push(audioUrl);
+        console.log(`Queue size: ${audioQueue.length}`);
+
+        // Start playing if not already playing
+        if (!isPlaying) {
+            updateStatus('processing', '🔊 Playing response...');
+            playNext();
+        }
+    };
+
+    ws.onclose = () => {
+        console.log('❌ Disconnected');
+        updateStatus('disconnected', '❌ Disconnected');
+        recordButton.disabled = true;
         
-        // Speech recognition
-        let recognition = null;
+        // Clear queue on disconnect
+        audioQueue = [];
+        isPlaying = false;
         
-        // DOM elements
-        const recordButton = document.getElementById('recordButton');
-        const statusDiv = document.getElementById('status');
-        const transcriptDiv = document.getElementById('transcript');
-        const errorDiv = document.getElementById('error');
+        setTimeout(connect, 3000);
+    };
 
-        // Check if browser supports speech recognition
-        function checkSpeechRecognition() {
-            if (!('webkitSpeechRecognition' in window)) {
-                errorDiv.textContent = '❌ Speech recognition not supported. Please use Chrome or Edge.';
-                return false;
-            }
-            return true;
-        }
+    ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        errorDiv.textContent = '⚠️ Connection error';
+    };
+}
 
-        // Connect to WebSocket
-        function connect() {
-            ws = new WebSocket('ws://localhost:8000/ws/voice');
+// Speech recognition
+function checkSpeechRecognition() {
+    if (!('webkitSpeechRecognition' in window)) {
+        errorDiv.textContent = '❌ Use Chrome or Edge';
+        return false;
+    }
+    return true;
+}
 
-            ws.onopen = () => {
-                console.log('✅ Connected');
-                updateStatus('connected', '✅ Connected - Click mic to speak');
-                recordButton.disabled = false;
-            };
+function initSpeechRecognition() {
+    recognition = new webkitSpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = 'en-US';
 
-            ws.onmessage = async (event) => {
-                console.log('📥 Received audio');
-                updateStatus('processing', '🔊 Playing response...');
-                
-                // Play audio response
-                const audioBlob = event.data;
-                const audioUrl = URL.createObjectURL(audioBlob);
-                const audio = new Audio(audioUrl);
-                
-                audio.play();
-                
-                audio.onended = () => {
-                    updateStatus('connected', '✅ Ready - Click mic to speak again');
-                };
-            };
+    recognition.onstart = () => {
+        updateStatus('listening', '🎤 Listening... Speak now!');
+        recordButton.classList.add('listening');
+        transcriptDiv.textContent = 'Listening...';
+        
+        // Clear old queue when user speaks again
+        audioQueue = [];
+        isPlaying = false;
+    };
 
-            ws.onclose = () => {
-                console.log('❌ Disconnected');
-                updateStatus('disconnected', '❌ Disconnected');
-                recordButton.disabled = true;
-                setTimeout(connect, 3000);
-            };
+    recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        console.log('📝 Transcript:', transcript);
+        transcriptDiv.textContent = `You: "${transcript}"`;
+        sendText(transcript);
+    };
 
-            ws.onerror = (error) => {
-                console.error('WebSocket error:', error);
-                errorDiv.textContent = '⚠️ Connection error';
-            };
-        }
+    recognition.onerror = (event) => {
+        console.error('Speech error:', event.error);
+        errorDiv.textContent = `Error: ${event.error}`;
+        updateStatus('connected', '✅ Ready');
+        recordButton.classList.remove('listening');
+    };
 
-        // Initialize speech recognition
-        function initSpeechRecognition() {
-            recognition = new webkitSpeechRecognition();
-            recognition.continuous = false;
-            recognition.interimResults = false;
-            recognition.lang = 'en-US';
+    recognition.onend = () => {
+        recordButton.classList.remove('listening');
+    };
+}
 
-            recognition.onstart = () => {
-                console.log('🎤 Listening...');
-                updateStatus('listening', '🎤 Listening... Speak now!');
-                recordButton.classList.add('listening');
-                transcriptDiv.textContent = 'Listening...';
-                transcriptDiv.classList.add('active');
-            };
+function sendText(text) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        errorDiv.textContent = 'Not connected';
+        return;
+    }
 
-            recognition.onresult = (event) => {
-                const transcript = event.results[0][0].transcript;
-                console.log('📝 Transcript:', transcript);
-                
-                transcriptDiv.textContent = `You: "${transcript}"`;
-                
-                // Send to backend
-                sendText(transcript);
-            };
+    updateStatus('processing', '🤖 Processing...');
+    ws.send(JSON.stringify({ text: text }));
+}
 
-            recognition.onerror = (event) => {
-                console.error('Speech recognition error:', event.error);
-                errorDiv.textContent = `Error: ${event.error}`;
-                updateStatus('connected', '✅ Ready');
-                recordButton.classList.remove('listening');
-            };
+function updateStatus(type, message) {
+    statusDiv.className = `status ${type}`;
+    statusDiv.textContent = message;
+}
 
-            recognition.onend = () => {
-                console.log('🎤 Stopped listening');
-                recordButton.classList.remove('listening');
-            };
-        }
+recordButton.addEventListener('click', () => {
+    errorDiv.textContent = '';
+    recognition.start();
+});
 
-        // Send text to backend
-        function sendText(text) {
-            if (!ws || ws.readyState !== WebSocket.OPEN) {
-                errorDiv.textContent = 'Not connected to server';
-                return;
-            }
-
-            console.log('📤 Sending:', text);
-            updateStatus('processing', '🤖 Processing...');
-            
-            ws.send(JSON.stringify({
-                text: text
-            }));
-        }
-
-        // Update status display
-        function updateStatus(type, message) {
-            statusDiv.className = `status ${type}`;
-            statusDiv.textContent = message;
-        }
-
-        // Record button click
-        recordButton.addEventListener('click', () => {
-            if (!recognition) {
-                errorDiv.textContent = 'Speech recognition not initialized';
-                return;
-            }
-
-            errorDiv.textContent = '';
-            recognition.start();
-        });
-
-        // Initialize
-        if (checkSpeechRecognition()) {
-            initSpeechRecognition();
-            connect();
-        }
+if (checkSpeechRecognition()) {
+    initSpeechRecognition();
+    connect();
+}
     </script>
 </body>
 </html>

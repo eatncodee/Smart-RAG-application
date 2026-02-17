@@ -2,7 +2,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.services.rag import chat_with_function_calling
 from gtts import gTTS
 import io
-
+import re
 
 router=APIRouter()
 
@@ -14,40 +14,57 @@ async def procces_with_rag(user_text:str,conversation_history :list | None=None)
         return response
     
 
+def split_into_sentences(text):
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    sentences = [s.strip() for s in sentences if s.strip()]
+    return sentences
+
+def clean_text_for_tts(text):
+    text = re.sub(r'\*+', '', text)
+    text = re.sub(r'_+', '', text)
+    text = re.sub(r'#+\s?', '', text)
+    text = re.sub(r'`+', '', text)
+    text = re.sub(r'^\s*[-+*]\s+', '', text, flags=re.MULTILINE)
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
 async def text_to_speech(text:str):
-    tts =gTTS(text=text, lang='en', slow=False)
+    clean_text = clean_text_for_tts(text)    
+    sentences=split_into_sentences(text)
 
-    audio_file = io.BytesIO()
-    tts.write_to_fp(audio_file)
-    
-    audio_file.seek(0)
-    audio_bytes = audio_file.read()
+    for i,sentence in enumerate(sentences):
+        tts =gTTS(text=sentence, lang='en', slow=False)
+        audio_file = io.BytesIO()
+        tts.write_to_fp(audio_file)
+        audio_file.seek(0)
+        audio_bytes = audio_file.read()
+        yield audio_bytes
 
-    return audio_bytes
-
-
-@router.websocket("/ws/voice")
-async def voice_chat(websocket: WebSocket):
+user_histories={}
+@router.websocket("/ws/voice/{userId}")
+async def voice_chat(websocket: WebSocket,userId:str):
     await websocket.accept()
     print("✅ Voice client connected")
-    conversation_history=[]
+    audio_output=None
     try:
         while True:
+            current_history=user_histories.get(userId,[])
             data = await websocket.receive_json()
             user_text=data.get("text","")
             print(f"📥 Received {len(user_text)}")
             if not user_text:
                 continue
 
-            result =await procces_with_rag(user_text,conversation_history)
+            result =await procces_with_rag(user_text,current_history)
 
             if result :
-                conversation_history=result.get("conversation_history",[])
+                new_history=result.get("conversation_history",[])
+                user_histories[userId]=new_history
                 data=result.get("answer","")
-                audio_output=await text_to_speech(data)
-            if audio_output:
-                await websocket.send_bytes(audio_output)
-                print(f"📤 Sent {len(audio_output)} bytes")
+                async for audio_chunk in text_to_speech(data):
+                    if audio_chunk:
+                        await websocket.send_bytes(audio_chunk)
+                        print(f"📤 Sent chunk: {len(audio_chunk)} bytes")
         
     except WebSocketDisconnect:
         print("❌ Voice client disconnected")

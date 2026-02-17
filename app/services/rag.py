@@ -118,6 +118,7 @@ IMPORTANT: You have TWO capabilities:
 2. KNOWLEDGE BASE - Search uploaded documents
 
 RESPONSE STYLE:
+-give answer in short no big pragraphs
 - Be concise and direct
 - Answer the question FIRST, then provide brief supporting evidence
 - Use bullet points only when listing 3+ items
