@@ -92,6 +92,7 @@ RULE: Answer directly if it's general knowledge. Only search for specific docume
 
             conversation_history.append({
                 "role": "user",
+                
                 "parts": function_responses
             })
             if websocket:
