@@ -17,30 +17,24 @@ async def stream_rag_response(user_message: str,conversation_history: list | Non
     })
     
     system_instruction = """You are a helpful AI assistant with access to a company knowledge base.
-
 IMPORTANT: You have TWO capabilities:
-
 1. GENERAL KNOWLEDGE - Answer from your training:
    ✓ Math, science, history, geography
    ✓ Programming concepts and explanations
    ✓ Common knowledge questions
-   
 2. KNOWLEDGE BASE - Search uploaded documents:
    ✓ Company-specific information
    ✓ Resume/personal details
    ✓ Document content
-
 RULE: Answer directly if it's general knowledge. Only search for specific document/company info.
 """
-    
     try:
         if websocket:
             await websocket.send_json({
                 "type": "status",
                 "message": "Processing your question..."
             })
-        
-        response = client.models.generate_content(
+        response = client.models.generate_content_stream(
             model=settings.CHAT_MODEL,
             contents=conversation_history,
             config=types.GenerateContentConfig(
@@ -48,16 +42,27 @@ RULE: Answer directly if it's general knowledge. Only search for specific docume
                 temperature=0.7,
                 system_instruction=system_instruction
             )
-        )
-        
+        )  
+        model_parts = []
         function_calls = []
-        if (response.candidates and response.candidates[0].content and 
-            response.candidates[0].content.parts):
-            for part in response.candidates[0].content.parts:
-                if hasattr(part, 'function_call') and part.function_call:
-                    function_calls.append(part.function_call)
-        
+        full_answer=""
         used_rag = False
+        for chunk in response:
+            if (chunk.candidates and chunk.candidates[0].content and 
+                chunk.candidates[0].content.parts):
+                for part in chunk.candidates[0].content.parts:
+                    model_parts.append(part)
+                    if hasattr(part, 'function_call') and part.function_call:
+                        function_calls.append(part.function_call)
+            
+                if function_calls:
+                    break
+                if chunk.text:
+                    full_answer += chunk.text
+                if websocket:
+                    await websocket.send_json({"type": "answer", "chunk": chunk.text})
+
+        answer = full_answer
         
         if function_calls:
             used_rag = True
@@ -67,54 +72,34 @@ RULE: Answer directly if it's general knowledge. Only search for specific docume
                     "type": "status",
                     "message": "🔍 Searching documents..."
                 })
-            
+
+            conversation_history.append({
+                        "role": "model", 
+                        "parts": model_parts  
+                    })
+            function_responses = []
             for fc in function_calls:
                 if fc.name == "search_documents":
                     query = fc.args.get("query", "")
                     search_results = search_documents(query)
-                    
-                    conversation_history.append({
-                        "role": "model",
-                        "parts": [{"function_call": fc.model_dump()}]
+                
+                    function_responses.append({
+                        "function_response": {
+                            "name": "search_documents",
+                            "response": {"result": search_results}
+                        }
                     })
-                    conversation_history.append({
-                        "role": "user",
-                        "parts": [{
-                            "function_response": {
-                                "name": "search_documents",
-                                "response": {"result": search_results}
-                            }
-                        }]
-                    })
+
+            conversation_history.append({
+                "role": "user",
+                "parts": function_responses
+            })
             if websocket:
                 await websocket.send_json({
                     "type": "status",
                     "message": "✨ Generating answer..."
                 })
             
-            response_stream = client.models.generate_content_stream(model=settings.CHAT_MODEL,contents=conversation_history,config=types.GenerateContentConfig(temperature=0.7,system_instruction=system_instruction))
-            
-            full_answer = ""
-            for chunk in response_stream:
-                if chunk.text:
-                    full_answer += chunk.text
-                    
-                    if websocket:
-                        await websocket.send_json({
-                            "type": "answer",
-                            "chunk": chunk.text
-                        })
-            
-            answer = full_answer
-        
-        else:
-            if websocket:
-                await websocket.send_json({
-                    "type": "status",
-                    "message": "💭 Thinking..."
-                })
-            
-
             response_stream = client.models.generate_content_stream(model=settings.CHAT_MODEL,contents=conversation_history,config=types.GenerateContentConfig(temperature=0.7,system_instruction=system_instruction))
             
             full_answer = ""
