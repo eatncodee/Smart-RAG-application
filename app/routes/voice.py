@@ -30,7 +30,7 @@ def clean_text_for_tts(text):
 
 async def text_to_speech(text:str):
     clean_text = clean_text_for_tts(text)    
-    sentences=split_into_sentences(text)
+    sentences=split_into_sentences(clean_text)
 
     for i,sentence in enumerate(sentences):
         tts =gTTS(text=sentence, lang='en', slow=False)
