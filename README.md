@@ -9,7 +9,12 @@ Unlike standard RAG pipelines, this application uses **Tool Calling** to act as 
 ![Project Demo](app/demo/gif_demo.gif)
 *Watch the agent intelligently switch between general chat and document retrieval.*
 
+### Watch the full video (with sound):
+https://github.com/user-attachments/assets/4f414d16-d233-4cb9-98b9-c2432d29c3ab
+
+
 ---
+
 
 ## ✨ Key Features
 
