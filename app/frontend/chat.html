@@ -264,8 +264,7 @@
     </div>
 
     <script>
-        // WebSocket connection
-        let ws = null;
+        // REST chat connection
         let currentMessage = null;
         let conversationHistory = [];
 
@@ -276,64 +275,14 @@
         const statusDot = document.getElementById('statusDot');
         const statusText = document.getElementById('statusText');
 
-        // Connect to WebSocket
+        // The chat page uses the REST endpoint, so it works from the same
+        // Render service without a second WebSocket route.
         function connect() {
-            ws = new WebSocket('ws://localhost:8000/ws/chat');
-
-            ws.onopen = () => {
-                console.log('✅ Connected to WebSocket');
-                statusDot.classList.add('connected');
-                statusText.textContent = 'Connected';
-                messageInput.disabled = false;
-                sendButton.disabled = false;
-                addStatusMessage('Connected to server ✅');
-            };
-
-            ws.onmessage = (event) => {
-                const message = JSON.parse(event.data);
-                handleMessage(message);
-            };
-
-            ws.onclose = () => {
-                console.log('❌ Disconnected from WebSocket');
-                statusDot.classList.remove('connected');
-                statusText.textContent = 'Disconnected';
-                messageInput.disabled = true;
-                sendButton.disabled = true;
-                addStatusMessage('Disconnected from server ❌');
-                
-                // Attempt to reconnect after 3 seconds
-                setTimeout(connect, 3000);
-            };
-
-            ws.onerror = (error) => {
-                console.error('WebSocket error:', error);
-                addStatusMessage('Connection error ⚠️');
-            };
-        }
-
-        // Handle incoming messages
-        function handleMessage(message) {
-            console.log('Received:', message);
-
-            switch(message.type) {
-                case 'status':
-                    updateStatus(message.message);
-                    break;
-
-                case 'answer':
-                    appendToCurrentMessage(message.chunk);
-                    break;
-
-                case 'done':
-                    finishMessage(message.used_rag);
-                    break;
-
-                case 'error':
-                    addStatusMessage(`Error: ${message.message}`);
-                    finishMessage(false);
-                    break;
-            }
+            statusDot.classList.add('connected');
+            statusText.textContent = 'Connected';
+            messageInput.disabled = false;
+            sendButton.disabled = false;
+            addStatusMessage('Connected to server ✅');
         }
 
         // Update status indicator
@@ -448,28 +397,41 @@
             scrollToBottom();
         }
 
-        // Send message
-        function sendMessage() {
+        // Send message through the FastAPI REST endpoint.
+        async function sendMessage() {
             const text = messageInput.value.trim();
-            
             if (!text) return;
-            if (!ws || ws.readyState !== WebSocket.OPEN) {
-                alert('Not connected to server');
-                return;
-            }
 
-            // Add to UI
             addUserMessage(text);
-
-            // Send to server
-            ws.send(JSON.stringify({
-                message: text
-            }));
-
-            // Clear input and disable while processing
             messageInput.value = '';
             sendButton.disabled = true;
             messageInput.disabled = true;
+            updateStatus('Thinking…');
+
+            try {
+                const response = await fetch('/chat/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: text,
+                        conversation_history: conversationHistory,
+                        temprature: 0.7
+                    })
+                });
+
+                if (!response.ok) {
+                    const detail = await response.text();
+                    throw new Error(detail || `Request failed with status ${response.status}`);
+                }
+
+                const result = await response.json();
+                conversationHistory = result.conversation_history || conversationHistory;
+                appendToCurrentMessage(result.answer || '');
+                finishMessage(Boolean(result.used_rag));
+            } catch (error) {
+                addStatusMessage(`Error: ${error.message}`);
+                finishMessage(false);
+            }
         }
 
         // Scroll to bottom

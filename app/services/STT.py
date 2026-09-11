@@ -1,18 +1,17 @@
-import io,wave
-import re
-import os
-import asyncio
-import time
+import io
+import wave
+
 from sarvamai import AsyncSarvamAI
 
-
-sarvam_client=AsyncSarvamAI(api_subscription_key=os.getenv("Sarvam_key") or os.getenv("SARVAM_API_KEY") or os.getenv("sarvam_key"))
-
+from app.config import settings
 
 
-async def speech_to_text(audio_bytes:bytes) ->dict:
+sarvam_client = AsyncSarvamAI(api_subscription_key=settings.SARVAM_API_KEY)
+
+
+async def speech_to_text(audio_bytes: bytes) -> dict:
     wav_buffer = io.BytesIO()
-    with wave.open(wav_buffer, 'wb') as wf:
+    with wave.open(wav_buffer, "wb") as wf:
         wf.setnchannels(1)        # mono
         wf.setsampwidth(2)        # 16-bit
         wf.setframerate(16000)    # 16kHz — Sarvam requires this
@@ -21,10 +20,10 @@ async def speech_to_text(audio_bytes:bytes) ->dict:
 
     response = await sarvam_client.speech_to_text.transcribe(
         file=("audio.wav", wav_buffer, "audio/wav"),
-        model="saarika:v2.5",     
-        language_code="unknown",  
+        model="saarika:v2.5",
+        language_code="unknown",
     )
     return {
         "transcript": response.transcript,
-        "language_code": response.language_code 
+        "language_code": response.language_code,
     }

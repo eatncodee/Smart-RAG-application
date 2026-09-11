@@ -1,7 +1,43 @@
 # 🎙️ Real-Time Voice Assistant with RAG
 
 ### A full-duplex voice AI system that lets you have a natural spoken conversation with your documents.
-#### Built with FastAPI · GPT-4o-mini · Sarvam AI · Cartesia Sonic-3
+#### Built with FastAPI · Gemini · Sarvam AI · Cartesia Sonic-3
+
+---
+
+## Deploy on Render
+
+This repository now includes a Render Blueprint in `render.yaml` and a production dependency file in `requirements.txt`.
+
+1. Push the repository to GitHub and create a new **Blueprint** in the [Render Dashboard](https://dashboard.render.com/).
+2. Select this repository. Render will use `render.yaml` to create one Python Web Service.
+3. When prompted, enter these secret environment variables:
+   - `GOOGLE_API_KEY` — Gemini/Google AI key for chat and embeddings
+   - `SARVAM_API_KEY` — Sarvam AI speech-to-text key
+   - `CARTESIA_API_KEY` — Cartesia text-to-speech key
+4. After the deploy finishes, open the service URL. The voice UI is served at `/` and `/voice`; the REST chat UI is available at `/chat`.
+5. The health check is available at `/health`; API documentation is available at `/docs`.
+
+The service must remain a **Web Service**, not a Static Site, because the voice assistant uses an inbound WebSocket at `/ws/voice/{userId}`. The frontend automatically uses `wss://` when the deployed page is served over HTTPS.
+
+### ChromaDB persistence
+
+The default Blueprint uses `./chroma_db`, which is suitable for a demo but is on Render's ephemeral filesystem. Uploaded documents can disappear after a restart or deploy. For persistent documents, attach a paid Render persistent disk mounted at `/var/data` and set:
+
+```text
+CHROMA_DB_PATH=/var/data/chroma_db
+```
+
+Alternatively, replace local ChromaDB with a hosted vector database before production use.
+
+### Local run
+
+```bash
+pip install -r requirements.txt
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Then open `http://localhost:8000/`.
 
 ---
 
@@ -26,18 +62,18 @@ This system runs all three in parallel. While the AI is speaking, it is already 
 
 - 🗣️ **Full-Duplex Voice Interaction** — Persistent, two-way audio streaming via WebSockets. The system listens even while it is speaking, creating a truly fluid conversation loop.
 
-- 🧠 **Intelligent Decision Making** — Powered by GPT-4o-mini with native Tool Calling. Autonomously decides per query whether to search your documents via ChromaDB or answer from general knowledge.
+- 🧠 **Intelligent Decision Making** — Powered by Gemini with native Tool Calling. Autonomously decides per query whether to search your documents via ChromaDB or answer from general knowledge.
 
 - 🚫 **Real-Time Barge-in** — An `asyncio.Event` kill-switch instantly terminates the active TTS stream the moment your voice is detected, letting you interrupt naturally.
 
 - ⚡ **Parallel Pipeline Architecture** — STT, LLM, and TTS run in a pipelined fashion. The AI starts speaking the first sentence while the rest of the response is still being generated.
   - 🦻 **Ear** (Sarvam AI) — `saarika:v2.5` for multilingual speech recognition with auto language detection
-  - 🧠 **Brain** (GPT-4o-mini) — Tool calling + ChromaDB RAG for document-grounded answers
+  - 🧠 **Brain** (Gemini) — Tool calling + ChromaDB RAG for document-grounded answers
   - 🔊 **Mouth** (Cartesia) — `sonic-3` for realistic 44.1kHz streaming audio
 
 - 📜 **Persistent Context Memory** — Conversation history survives interruptions. Ask follow-ups like *"Wait, go back to what you said before"* and it will know.
 
-- 📥 **Seamless Document Ingestion** — Upload PDFs and they are automatically chunked, embedded with `text-embedding-3-small`, and stored in ChromaDB for instant retrieval.
+- 📥 **Seamless Document Ingestion** — Upload PDFs and they are automatically chunked, embedded with `gemini-embedding-001`, and stored in ChromaDB for instant retrieval.
 
 ---
 
@@ -52,7 +88,7 @@ Browser Mic
 Custom VAD (SilenceDetector)
     │  triggers after 0.8s silence
     ▼
-Sarvam AI STT  →  GPT-4o-mini  →  Cartesia TTS
+Sarvam AI STT  →  Gemini  →  Cartesia TTS
   saarika:v2.5     tool calling     sonic-3
   auto language    ChromaDB RAG     pcm_f32le @ 44.1kHz
                        │
@@ -63,7 +99,7 @@ Sarvam AI STT  →  GPT-4o-mini  →  Cartesia TTS
 
 **🦻 Ear** — `SilenceDetector` runs RMS volume analysis on every incoming PCM chunk. Triggers after 0.8 seconds of post-speech silence.
 
-**🧠 Brain** — GPT-4o-mini with tool calling. Decides per query whether to search ChromaDB or answer from general knowledge. Full conversation history passed every turn.
+**🧠 Brain** — Gemini with tool calling. Decides per query whether to search ChromaDB or answer from general knowledge. Full conversation history passed every turn.
 
 **🔊 Mouth** — Cartesia WebSocket stays persistent across sentences. Text is split into sentences and streamed in — first audio chunk arrives before the full response is generated.
 
@@ -71,7 +107,7 @@ Sarvam AI STT  →  GPT-4o-mini  →  Cartesia TTS
 
 ## 🚫 Barge-in
 
-The moment your voice is detected while the AI is speaking, an `asyncio.Event` kill switch fires — cancelling the active TTS stream instantly.
+The moment your voice is detected while the AI is speaking, an `asyncio.Event` kill switch fires — cancelling the active TTS stream instantly and returning to listening.
 
 ```python
 async for audio_chunk in text_to_speech(response):
@@ -86,10 +122,10 @@ async for audio_chunk in text_to_speech(response):
 
 | Layer | Technology | Model |
 |---|---|---|
-| Backend | FastAPI + Python 3.12 | — |
+| Backend | FastAPI + Python 3.14 | — |
 | STT | Sarvam AI | `saarika:v2.5` |
-| LLM | OpenAI | `gpt-4o-mini` |
-| Embeddings | OpenAI | `text-embedding-3-small` |
+| LLM | Google Gemini | `gemini-2.5-flash` |
+| Embeddings | Google Gemini | `gemini-embedding-001` |
 | TTS | Cartesia | `sonic-3` |
 | Vector DB | ChromaDB | Local persistent |
 | Concurrency | asyncio | Parallel pipeline |
@@ -103,7 +139,7 @@ async for audio_chunk in text_to_speech(response):
 |---|---|
 | VAD trigger | < 50ms |
 | Sarvam STT | 400–700ms |
-| GPT-4o-mini first token | 500–900ms |
+| Gemini first token | 500–900ms |
 | Cartesia first audio chunk | < 100ms |
 | **Time to first audio** | **~2–3 seconds** |
 
@@ -124,17 +160,16 @@ async for audio_chunk in text_to_speech(response):
 │   │   ├── documents.py      # PDF upload & ingestion logic
 │   │   └── voice.py          # WebSocket & VAD pipeline
 │   └── services/
-│       ├── rag.py            # GPT-4o-mini + Tool calling logic
+│       ├── rag.py            # Gemini + tool calling logic
 │       ├── streaming.py      # Async stream handlers
-│       ├── embedding.py      # OpenAI text-embedding-3-small
+│       ├── embedding.py      # Gemini embeddings
 │       └── database.py       # ChromaDB connection & management
 ├── audio/
 │   ├── audio_convert.py      # Sample rate & format conversion
 │   ├── audio_play.py         # Local playback utilities
 │   └── record_audio.py       # CLI recording for testing
-├── chroma_db/                # Local vector store persistence
-├── .env                      # API Keys (OpenAI, Sarvam, Cartesia)
+├── .env                      # API Keys (Gemini, Sarvam, Cartesia)
 ├── requirements.txt          # Project dependencies
+├── render.yaml               # Render Blueprint
 └── README.md                 # Project documentation
-
----
+```

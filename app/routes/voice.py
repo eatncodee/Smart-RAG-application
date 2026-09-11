@@ -1,16 +1,14 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from app.services.streaming import stream_rag_response
-from app.services.VAD import SilenceDetector
-from app.services.STT import speech_to_text
-import re
-import httpx
-import os
-import json
 import asyncio
-from fastapi import UploadFile, File
+import json
+import re
+
 from cartesia import AsyncCartesia
-import random
-from app.services.fillers import FILLERS
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
+from app.config import settings
+from app.services.STT import speech_to_text
+from app.services.VAD import SilenceDetector
+from app.services.streaming import stream_rag_response
 
 
 # STT--TTT-TTS--
@@ -19,7 +17,7 @@ from app.services.fillers import FILLERS
 
 router=APIRouter()
 
-client=AsyncCartesia(api_key=os.getenv("Cartesia_key"),)
+client = AsyncCartesia(api_key=settings.CARTESIA_API_KEY)
 
 
 
@@ -111,20 +109,18 @@ async def voice_chat(websocket: WebSocket,userId:str):
                 "content": user_text
             })
             user_histories[userId] = current_history
-            result = await stream_rag_response(
+            await stream_rag_response(
                 user_message=user_text,
                 conversation_history=current_history,
                 websocket=websocket,
                 text_chunk_callback=on_text_chunk
             )
 
-            # 3. If it finished naturally, save the full answer
+            # stream_rag_response already appends the assistant response to
+            # current_history. Save the mutated history without duplicating it.
             if sentence_buffer.strip():
                 await sentence_queue.put(sentence_buffer.strip())
-            
-            if result:
-                current_history.append({"role": "assistant", "content": full_ai_response})
-                user_histories[userId] = current_history
+            user_histories[userId] = current_history
 
         except asyncio.CancelledError:
             # ⚡ BARGE-IN DETECTED
@@ -229,8 +225,16 @@ async def voice_chat(websocket: WebSocket,userId:str):
     finally:
         if active_ai_task and not active_ai_task.done():
             active_ai_task.cancel()
-        await sentence_queue.put(None) 
-        await tts_task
+            try:
+                await active_ai_task
+            except asyncio.CancelledError:
+                pass
+
+        await sentence_queue.put(None)
+        try:
+            await tts_task
+        except asyncio.CancelledError:
+            pass
         print("🧹 Cleanup complete.")
 
 
@@ -252,43 +256,57 @@ def clean_text_for_tts(text):
 
 
 async def cartesia_tts_worker(sentence_queue: asyncio.Queue, websocket, interrupt_event: asyncio.Event):
-    ws = await client.tts.websocket()
+    ws = None
     try:
+        ws = await client.tts.websocket()
         while True:
             sentence = await sentence_queue.get()
-            
+
             if sentence is None:
                 sentence_queue.task_done()
                 break
-                
-            interrupt_event.clear()
 
-            if not sentence.strip():
+            try:
+                interrupt_event.clear()
+
+                if not sentence.strip():
+                    continue
+
+                stream = await ws.send(
+                    model_id="sonic-3",
+                    transcript=sentence,
+                    voice={"mode": "id", "id": "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"},
+                    output_format={
+                        "container": "raw",
+                        "encoding": "pcm_f32le",
+                        "sample_rate": 44100,
+                    },
+                )
+
+                async for output in stream:
+                    if interrupt_event.is_set():
+                        print("🔇 TTS Worker: Interrupt received, killing current stream...")
+                        break
+
+                    if output.audio is not None:
+                        await websocket.send_bytes(output.audio)
+            finally:
                 sentence_queue.task_done()
-                continue
 
-            stream = await ws.send(
-                model_id="sonic-3",
-                transcript=sentence,
-                voice={"mode": "id", "id": "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"},
-                output_format={
-                    "container": "raw",
-                    "encoding": "pcm_f32le",
-                    "sample_rate": 44100
-                },
-            )
-            
-            async for output in stream:
-                if interrupt_event.is_set():
-                    print("🔇 TTS Worker: Interrupt received, killing current stream...")
-                    break
-
-                if output.audio is not None:
-                    await websocket.send_bytes(output.audio)
-                    
-            sentence_queue.task_done()
-            
-    except Exception as e:
-        print(f"⚠️ TTS Worker Error: {e}")
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        print(f"⚠️ TTS Worker Error: {exc}")
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "message": "Text-to-speech service is unavailable.",
+            })
+        except Exception:
+            pass
     finally:
-        await ws.close()
+        if ws is not None:
+            try:
+                await ws.close()
+            except Exception:
+                pass

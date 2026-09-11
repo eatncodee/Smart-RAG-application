@@ -89,7 +89,7 @@ async def upload_file(file: UploadFile = File(...)):
                 ids=[f"{file.filename}_{i}" for i in range(len(chunks))]           
             ) 
             return {
-                "message": f"File uploaded successfully",
+                "message": "File uploaded successfully",
                 "filename": file.filename,
                 "chunks_created": len(chunks),
                 "total_characters": len(text)
@@ -133,7 +133,7 @@ async def clear_documents():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-router.get("/count")
+@router.get("/count")
 async def count_documents():
     collection = get_collection()
     return {"count": collection.count()}

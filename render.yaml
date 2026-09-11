@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: realtime-duplex-voice-rag
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: SARVAM_API_KEY
+        sync: false
+      - key: CARTESIA_API_KEY
+        sync: false
+      - key: CHROMA_DB_PATH
+        value: ./chroma_db
+      - key: WARMUP_ON_STARTUP
+        value: "false"

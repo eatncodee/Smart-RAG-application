@@ -54,7 +54,7 @@ def process_file(filename: str, file_content: bytes) -> str:
         return extract_text_from_txt(file_content)
     
     else:
-        raise ValueError(f"Unsupported file type. Supported: PDF, DOCX, TXT")
+        raise ValueError("Unsupported file type. Supported: PDF, DOCX, TXT")
 
 def chunk_text(text: str, chunk_size: int = 1000, overlap: int = 200) -> list[str]:
     chunks = []

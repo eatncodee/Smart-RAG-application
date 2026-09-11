@@ -1,13 +1,11 @@
 from openai import AsyncOpenAI
 from app.config import settings
-from app.database import get_collection
-from app.services.embedding import create_embedding
 from app.services.rag import search_tool, search_documents
 import json
 import asyncio
 
 client = AsyncOpenAI(
-    api_key=settings.OPENAI_API_KEY,
+    api_key=settings.GOOGLE_API_KEY,
     base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
 )
 

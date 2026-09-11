@@ -22,7 +22,7 @@ class ChatMessage(BaseModel):
 @router.post("/ask")
 async def ask(q: Question):
     try:
-        result = ask_question(q.question, q.n_results)
+        result = await ask_question(q.question, q.n_results)
         return result
     
     except Exception as e:
